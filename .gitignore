@@ -12,3 +12,12 @@ profile.svg
 
 # Time trace
 trace.json
+
+# hypr-spellbook-swap
+test/.state/
+test/.xdg/
+bin/
+
+# CI Lua/LuaRocks install trees (leafo actions)
+.lua/
+.luarocks/

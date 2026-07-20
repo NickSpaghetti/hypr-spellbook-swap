@@ -17,3 +17,7 @@ trace.json
 test/.state/
 test/.xdg/
 bin/
+
+# CI Lua/LuaRocks install trees (leafo actions)
+.lua/
+.luarocks/

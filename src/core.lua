@@ -5,12 +5,16 @@
 -- load it with `local core = dofile("core.lua")` and call `core.<fn>(...)`.
 local Core = {}
 
--- Strip the "lua:" reference prefix a custom layout is configured with, since
--- Hyprland reports the bare name at runtime.
+-- Hyprland references a custom Lua layout as "lua:<name>" in config, but
+-- reports the bare "<name>" at runtime.
 -- https://wiki.hypr.land/Configuring/Layouts/Custom-Layouts/
+local LUA_PREFIX = "lua:"
+
+-- Strip the "lua:" reference prefix so a configured "lua:grid" matches the
+-- runtime "grid".
 local function bare_name(name)
-    if name:sub(1, 4) == "lua:" then
-        return name:sub(5)
+    if name:sub(1, #LUA_PREFIX) == LUA_PREFIX then
+        return name:sub(#LUA_PREFIX + 1)
     end
     return name
 end
@@ -52,7 +56,7 @@ function Core.icon_key(config, tiled_layout)
     if config.icons[tiled_layout] then
         return tiled_layout
     end
-    return "lua:" .. tiled_layout
+    return LUA_PREFIX .. tiled_layout
 end
 
 -- Build the Waybar custom-module state as a plain Lua table. Core stays

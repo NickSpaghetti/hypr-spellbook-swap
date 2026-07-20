@@ -21,3 +21,6 @@ bin/
 # CI Lua/LuaRocks install trees (leafo actions)
 .lua/
 .luarocks/
+
+# Font build: only the .ttf is committed; .otf is a throwaway build artifact
+font/dist/*.otf

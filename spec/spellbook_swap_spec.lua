@@ -1,5 +1,5 @@
 -- Unit tests for spellbook_swap.lua against a fake `hl` and a temp state dir.
--- Run via `make test`, i.e. `lua spec/glue_spec.lua` from the repo root.
+-- Run via `make test`, i.e. `lua spec/spellbook_swap_spec.lua` from the repo root.
 local ok = dofile("spec/support.lua")
 
 local mock_layout_config = {
@@ -11,13 +11,17 @@ local mock_layout_config = {
 
 -- Fresh fake `hl` that records everything the glue asks Hyprland to do.
 local function fake_hl(tiled_layout)
-    local calls = { exec = {}, notifications = {}, binds = {}, events = {}, registered = {} }
+    local calls =
+        { exec = {}, rules = {}, notifications = {}, binds = {}, events = {}, registered = {} }
     _G.hl = {
         get_active_workspace = function()
             return { id = 2, tiled_layout = tiled_layout }
         end,
         exec_cmd = function(cmd)
             calls.exec[#calls.exec + 1] = cmd
+        end,
+        workspace_rule = function(rule)
+            calls.rules[#calls.rules + 1] = rule
         end,
         notification = {
             create = function(spec)
@@ -66,12 +70,15 @@ local shared_dir = fresh_state_dir()
 local calls = fake_hl("scrolling")
 sb.setup({ layouts = mock_layout_config, state_dir = shared_dir, notify = false })
 ok.eq(#calls.binds, 1)
+ok.eq(calls.binds[1].combo, "SUPER + L")
 ok.eq(#calls.events, 2)
 
--- cycle() emits the hyprctl keyword for the NEXT layout (scrolling -> dwindle)
+-- cycle() switches the workspace to the NEXT layout (scrolling -> dwindle) via
+-- a workspace rule, with the id as a string
 local cycle = last(calls.binds).fn
 cycle()
-ok.eq(contains(calls.exec, 'hyprctl keyword workspace "2, layout:dwindle"'), true)
+ok.eq(last(calls.rules).workspace, "2")
+ok.eq(last(calls.rules).layout, "dwindle")
 
 -- 2) notify=false records no notification (neither engine path runs)
 ok.eq(#calls.notifications, 0)
@@ -101,7 +108,8 @@ sb.setup({ layouts = mock_layout_config, state_dir = sticky_dir, sticky = true, 
 last(first.binds).fn() -- ws 2 -> dwindle, persisted to sticky_dir
 local second = fake_hl("scrolling")
 sb.setup({ layouts = mock_layout_config, state_dir = sticky_dir, sticky = true, notify = false })
-ok.eq(contains(second.exec, 'hyprctl keyword workspace "2, layout:dwindle"'), true)
+ok.eq(second.rules[1].workspace, "2")
+ok.eq(second.rules[1].layout, "dwindle")
 
 os.execute('rm -rf "' .. shared_dir .. '" "' .. sticky_dir .. '"')
 ok.done()

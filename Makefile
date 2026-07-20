@@ -3,7 +3,7 @@ STYLUA   := $(shell [ -x bin/stylua ] && echo bin/stylua || echo stylua)
 LUACHECK := $(shell [ -x bin/luacheck ] && echo bin/luacheck || echo luacheck)
 SPECS    := $(wildcard spec/*_spec.lua)
 
-.PHONY: check fmt fmt-check lint test font verify e2e hooks
+.PHONY: check fmt fmt-check lint test font verify e2e hooks install-font uninstall-font
 
 check: fmt-check lint test
 
@@ -31,3 +31,14 @@ e2e:
 hooks:
 	git config core.hooksPath .githooks
 	@echo "pre-commit hook enabled (.githooks/pre-commit)"
+
+install-font:
+	mkdir -p "$(HOME)/.local/share/fonts"
+	ln -sf "$(CURDIR)/font/dist/hypr-spellbook-swap-layouts.ttf" "$(HOME)/.local/share/fonts/hypr-spellbook-swap-layouts.ttf"
+	fc-cache -f
+	@echo "linked into ~/.local/share/fonts; run make uninstall-font to remove"
+
+uninstall-font:
+	rm -f "$(HOME)/.local/share/fonts/hypr-spellbook-swap-layouts.ttf"
+	fc-cache -f
+	@echo "removed the font symlink"

@@ -1,6 +1,7 @@
 -- Hyprland glue for the layout-cycling feature. This is the thin I/O layer:
 -- it wires the pure logic in core.lua to Hyprland's `hl` API (binds, events,
--- exec_cmd, notifications) and to on-disk state. All decisions live in core.
+-- workspace rules, notifications) and to on-disk state. All decisions live in
+-- core.
 --
 -- `Swap` is the module table exported by this file. Load it by absolute path
 -- (the repo is not on Hyprland's require path): https://hypr.land/news/26_lua/
@@ -30,10 +31,6 @@ end
 local REPO = script_dir()
 local core = dofile(REPO .. "/core.lua")
 
-local function keyword_cmd(workspace_id, layout)
-    return string.format('hyprctl keyword workspace "%d, layout:%s"', workspace_id, layout)
-end
-
 function Swap.setup(opts)
     opts = opts or {}
     local config = opts.layouts or assert(loadfile(opts.layouts_path or (REPO .. "/layouts.lua")))()
@@ -43,7 +40,7 @@ function Swap.setup(opts)
     local engine = opts.notification_engine or config.notification_engine or "hyprland"
     local signal = opts.waybar_signal or config.waybar_signal or 8
     local modifier = opts.mod or config.mod or "SUPER"
-    local key = opts.key or config.key or "TAB"
+    local key = opts.key or config.key or "L"
 
     local state_dir = opts.state_dir or (os.getenv("HOME") .. "/.local/state/hypr-spellbook-swap")
     local state_file = state_dir .. "/layouts"
@@ -53,8 +50,12 @@ function Swap.setup(opts)
         hl.layout.register(name, provider)
     end
 
+    -- Switch a workspace's tiled layout. Setting the workspace rule re-tiles it
+    -- immediately. We do NOT use `hyprctl keyword`: it is rejected under a lua
+    -- config ("keyword can't work with non-legacy parsers; use eval"). The
+    -- workspace selector must be a string.
     local function apply(workspace_id, layout)
-        hl.exec_cmd(keyword_cmd(workspace_id, layout))
+        hl.workspace_rule({ workspace = tostring(workspace_id), layout = layout })
     end
 
     local function persist()
@@ -93,7 +94,7 @@ function Swap.setup(opts)
         signal_waybar()
     end
 
-    -- Runtime `keyword` changes are dropped on config reload, so re-apply the
+    -- Runtime layout changes are dropped on config reload, so re-apply the
     -- saved layout for each workspace on setup when sticky is enabled.
     -- https://wiki.hypr.land/Configuring/Basics/Workspace-Rules/
     if sticky then

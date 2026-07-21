@@ -137,12 +137,15 @@ After upgrading Hyprland, re-verify. The unit tests run against a fake `hl`, so 
 1. `make verify`, to confirm the config still loads.
 2. A live smoke test: press `SUPER + L` and watch `hyprctl activeworkspace -j | jq .tiledLayout` change, run `hypr-spellbook-swap-waybar` by hand, and confirm a notification fires.
 
+A [nightly GitHub Actions job](.github/workflows/nightly.yml) does step 1 automatically against upstream's current default branch, so a breaking Hyprland change surfaces on its own instead of waiting for you to hit it live after upgrading.
+
 ## Development
 
 ```bash
 make check      # the gate: stylua --check ., luacheck ., then each spec/*_spec.lua
 make hooks      # enable the pre-commit hook, it runs make check on every commit
 make verify     # validate test/hyprland.lua through real Hyprland with no compositor
+make verify-nix # same check, but against upstream's current default branch, via Docker
 make e2e        # nested Hyprland using test/hyprland.lua, press SUPER+SHIFT+Q to quit
 make font       # rebuild font/dist/hypr-spellbook-swap-layouts.ttf from font/icons/*.svg, needs fontforge
 make install    # copy the module into ~/.config/hypr, the waybar exec onto PATH, and the font
@@ -152,6 +155,8 @@ make uninstall  # remove everything make install put in place
 Dev tools install with `sudo pacman -S luacheck stylua`, plus `fontforge` only if you edit the SVGs. Tests and `make verify` run against the repo, not the install, so you develop against the repo and re-run `make install` when you want the live copy updated. The tests use a fake `hl` and a throwaway `state_dir` under `test/`, so nothing touches your live config or session.
 
 A note on `make verify`. Calling `hl.layout.register` crashes `Hyprland --verify-config` on 0.55.x, so `test/hyprland.lua` registers custom layouts only in the nested run under `make e2e`, not under `make verify`. This is fixed upstream in Hyprland 0.56.0.
+
+A note on `make verify-nix`. It builds Hyprland's own `flake.nix` at its current default branch (not the commit `flake.lock` happens to pin, which is only a baseline) inside the official `nixos/nix` Docker image, so it needs only Docker locally -- no Nix install. Most of the closure comes prebuilt from Hyprland's own `hyprland.cachix.org` binary cache rather than compiling from source, which is why this stays fast; trusting that cache is an explicit, visible choice (`--option accept-flake-config true` in the `Makefile`), not a silent default. Because the container runs as root, the invocation also passes `--i-am-really-stupid` to Hyprland -- harmless for a throwaway config-verify sandbox, but never something to pass for a real session.
 
 ## Repo layout
 

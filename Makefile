@@ -8,7 +8,14 @@ MODULE_DEST := $(HYPR_DIR)/hypr-spellbook-swap
 WAYBAR_BIN  := $(HOME)/.local/bin/hypr-spellbook-swap-waybar
 FONT_DEST   := $(HOME)/.local/share/fonts/hypr-spellbook-swap-layouts.ttf
 
-.PHONY: check fmt fmt-check lint test font verify e2e hooks install uninstall
+.PHONY: check fmt fmt-check lint test font verify verify-nix e2e hooks install uninstall
+
+# Overridable so CI (or anyone testing against a non-system build) can point
+# at an arbitrary Hyprland binary; default preserves today's behavior exactly
+# (resolve "Hyprland" via PATH, i.e. the system package).
+HYPRLAND ?= Hyprland
+# Extra flags for the verify recipe; empty by default. verify-nix
+HYPRLAND_FLAGS ?=
 
 check: fmt-check lint test
 
@@ -28,7 +35,19 @@ font:
 	cd font && ./build.sh
 
 verify:
-	Hyprland --verify-config -c test/hyprland.lua
+	$(HYPRLAND) $(HYPRLAND_FLAGS) --verify-config -c test/hyprland.lua
+
+# Build upstream's current default-branch Hyprland via its own flake
+# (bypassing flake.lock, which only pins a baseline) and run verify against
+# it, all inside the official nixos/nix Docker image. Local Nix install is not required
+# This is the same check the nightly CI job runs.
+verify-nix:
+	docker run --rm -v "$(CURDIR)":/workspace -w /workspace nixos/nix:latest sh -c '\
+		git config --global --add safe.directory /workspace && \
+		nix --extra-experimental-features "nix-command flakes" \
+		    --option accept-flake-config true \
+		    run --override-input hyprland github:hyprwm/Hyprland .#verify \
+	'
 
 e2e:
 	./test/run-nested.sh

@@ -11,4 +11,3 @@ exclude_files = {
     ".install/**/*.lua",
 }
 
-files["spec/spellbook_swap_spec.lua"].globals = { "hl" }

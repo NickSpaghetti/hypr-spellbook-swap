@@ -3,7 +3,12 @@ STYLUA   := $(shell [ -x bin/stylua ] && echo bin/stylua || echo stylua)
 LUACHECK := $(shell [ -x bin/luacheck ] && echo bin/luacheck || echo luacheck)
 SPECS    := $(wildcard spec/*_spec.lua)
 
-.PHONY: check fmt fmt-check lint test font verify e2e hooks install-font uninstall-font
+HYPR_DIR    := $(if $(XDG_CONFIG_HOME),$(XDG_CONFIG_HOME),$(HOME)/.config)/hypr
+MODULE_DEST := $(HYPR_DIR)/hypr-spellbook-swap
+WAYBAR_BIN  := $(HOME)/.local/bin/hypr-spellbook-swap-waybar
+FONT_DEST   := $(HOME)/.local/share/fonts/hypr-spellbook-swap-layouts.ttf
+
+.PHONY: check fmt fmt-check lint test font verify e2e hooks install uninstall
 
 check: fmt-check lint test
 
@@ -32,13 +37,26 @@ hooks:
 	git config core.hooksPath .githooks
 	@echo "pre-commit hook enabled (.githooks/pre-commit)"
 
-install-font:
-	mkdir -p "$(HOME)/.local/share/fonts"
-	ln -sf "$(CURDIR)/font/dist/hypr-spellbook-swap-layouts.ttf" "$(HOME)/.local/share/fonts/hypr-spellbook-swap-layouts.ttf"
+# Copy (not symlink) the module into the Hyprland config dir so the live install
+# is a stable snapshot: editing the repo does not change it until you re-run
+# `make install`. install runs uninstall first and checks sources before removing.
+install:
+	@test -n "$(HOME)" || { echo "install: HOME is not set"; exit 1; }
+	@test -d src || { echo "install: run from the repo root (missing src/)"; exit 1; }
+	@test -f font/dist/hypr-spellbook-swap-layouts.ttf || { echo "install: font missing; run 'make font' first"; exit 1; }
+	$(MAKE) uninstall
+	mkdir -p "$(MODULE_DEST)" "$(HOME)/.local/bin" "$(HOME)/.local/share/fonts"
+	cp src/*.lua "$(MODULE_DEST)/"
+	cp scripts/waybar-layout.sh "$(WAYBAR_BIN)"
+	chmod +x "$(WAYBAR_BIN)"
+	cp font/dist/hypr-spellbook-swap-layouts.ttf "$(FONT_DEST)"
 	fc-cache -f
-	@echo "linked into ~/.local/share/fonts; run make uninstall-font to remove"
+	@echo "installed hypr-spellbook-swap (copied to $(MODULE_DEST))"
 
-uninstall-font:
-	rm -f "$(HOME)/.local/share/fonts/hypr-spellbook-swap-layouts.ttf"
+uninstall:
+	@test -n "$(HOME)" || { echo "uninstall: HOME is not set"; exit 1; }
+	@case "$(MODULE_DEST)" in */hypr-spellbook-swap) : ;; *) echo "uninstall: refusing unexpected path $(MODULE_DEST)"; exit 1 ;; esac
+	rm -rf "$(MODULE_DEST)"
+	rm -f "$(WAYBAR_BIN)" "$(FONT_DEST)"
 	fc-cache -f
-	@echo "removed the font symlink"
+	@echo "uninstalled hypr-spellbook-swap"

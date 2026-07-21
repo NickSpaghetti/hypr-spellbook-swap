@@ -1,6 +1,6 @@
 /* Prepend the layout font so the PUA glyphs resolve. Merge into your style.css,
    or add "hypr-spellbook-swap-layouts" to the front of the module font-family. */
-#custom-hypr-layout {
+#custom-hypr-spellbook-swap {
     font-family: "hypr-spellbook-swap-layouts", "JetBrainsMono Nerd Font", monospace;
     padding: 0 8px;
 }

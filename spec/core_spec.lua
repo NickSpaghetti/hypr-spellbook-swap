@@ -31,4 +31,43 @@ ok.eq(unknown.text, "?")
 ok.eq(unknown.tooltip, "Layout: unknown")
 
 ok.eq(core.parse_state(core.serialize_state({ [2] = "dwindle" }))[2], "dwindle")
+-- is_lua_layout: only "lua:" names are custom
+ok.eq(core.is_lua_layout("lua:grid"), true)
+ok.eq(core.is_lua_layout("dwindle"), false)
+
+-- valid_lua_layouts: register keys (as lua:) + declared lua: extras; no built-ins
+local valid_lua = core.valid_lua_layouts({ grid = {} }, { "lua:foo" })
+ok.eq(valid_lua["lua:grid"], true)
+ok.eq(valid_lua["lua:foo"], true)
+ok.eq(valid_lua.dwindle, nil)
+
+-- filter_cycle: bare names always kept; only unregistered lua: entries dropped
+local kept, dropped =
+    core.filter_cycle({ "scrolling", "master", "lua:grid", "lua:nope" }, valid_lua)
+ok.eq(#kept, 3)
+ok.eq(kept[1], "scrolling")
+ok.eq(kept[2], "master")
+ok.eq(kept[3], "lua:grid")
+ok.eq(#dropped, 1)
+ok.eq(dropped[1], "lua:nope")
+
+-- serialize_config round-trips icons/labels (persisted for the waybar emit)
+local dumped = core.serialize_config({
+    icons = { ["lua:grid"] = "\238\164\132", scrolling = "S" },
+    labels = { scrolling = "Scrolling" },
+})
+local roundtrip = (loadstring or load)(dumped)()
+ok.eq(roundtrip.icons["lua:grid"], "\238\164\132")
+ok.eq(roundtrip.icons.scrolling, "S")
+ok.eq(roundtrip.labels.scrolling, "Scrolling")
+
+-- icon_and_label: glyph + label, falling back to "?" and the raw name
+local mock = { icons = { dwindle = "D" }, labels = { dwindle = "Dwindle" } }
+local icon, label = core.icon_and_label(mock, "dwindle")
+ok.eq(icon, "D")
+ok.eq(label, "Dwindle")
+local micon, mlabel = core.icon_and_label(mock, "mystery")
+ok.eq(micon, "?")
+ok.eq(mlabel, "mystery")
+
 ok.done()

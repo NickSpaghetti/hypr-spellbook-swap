@@ -59,14 +59,22 @@ function Core.icon_key(config, tiled_layout)
     return LUA_PREFIX .. tiled_layout
 end
 
+-- Resolve the icon glyph and human label for a layout, with fallbacks ("?" icon,
+-- the layout name as label). Shared by the notification and the Waybar edge.
+function Core.icon_and_label(config, layout)
+    local key = Core.icon_key(config, layout)
+    local icon = (config.icons and config.icons[key]) or "?"
+    local label = (config.labels and config.labels[key]) or layout
+    return icon, label
+end
+
 -- Build the Waybar custom-module state as a plain Lua table. Core stays
--- decoupled from Waybar's wire format: the I/O edge (waybar_emit.lua, C4)
--- serializes and escapes this to JSON.
+-- decoupled from Waybar's wire format: the I/O edge (waybar_emit.lua) serializes
+-- and escapes this to JSON.
 function Core.waybar_state(config, tiled_layout)
-    local key = Core.icon_key(config, tiled_layout)
-    local label = (config.labels and config.labels[key]) or tiled_layout
+    local icon, label = Core.icon_and_label(config, tiled_layout)
     return {
-        text = config.icons[key] or "?",
+        text = icon,
         tooltip = "Layout: " .. label,
     }
 end
@@ -108,6 +116,66 @@ function Core.parse_state(text)
         end
     end
     return state
+end
+
+-- Does a layout name refer to a custom Lua layout ("lua:<name>")?
+function Core.is_lua_layout(name)
+    return name:sub(1, #LUA_PREFIX) == LUA_PREFIX
+end
+
+-- The set of valid custom (lua:) layout names: the register keys plus any extras
+-- the user declares (lua: layouts registered outside this module). Built-in and
+-- plugin names are NOT tracked -- Hyprland owns that namespace and gives no way
+-- to enumerate it, so bare names pass through and the runtime read-back catches
+-- one that does not actually apply.
+function Core.valid_lua_layouts(register, extra)
+    local set = {}
+    for name in pairs(register or {}) do
+        set[LUA_PREFIX .. name] = true
+    end
+    for _, name in ipairs(extra or {}) do
+        set[name] = true
+    end
+    return set
+end
+
+-- Keep every bare name; drop only lua: entries that are not registered.
+function Core.filter_cycle(cycle, valid_lua)
+    local kept, dropped = {}, {}
+    for _, name in ipairs(cycle) do
+        if Core.is_lua_layout(name) and not valid_lua[name] then
+            dropped[#dropped + 1] = name
+        else
+            kept[#kept + 1] = name
+        end
+    end
+    return kept, dropped
+end
+
+-- Serialize a string->string map to a Lua table literal, keys sorted for
+-- deterministic output. string.format("%q") makes each entry round-trip.
+local function serialize_string_map(map)
+    local keys = {}
+    for name in pairs(map or {}) do
+        keys[#keys + 1] = name
+    end
+    table.sort(keys)
+    local parts = {}
+    for _, name in ipairs(keys) do
+        parts[#parts + 1] = string.format("        [%q] = %q,", name, map[name])
+    end
+    return "{\n" .. table.concat(parts, "\n") .. "\n    }"
+end
+
+-- Serialize the effective icons/labels to a loadable Lua chunk. sb.setup writes
+-- this so the out-of-process Waybar emit reads the SAME config you configured,
+-- not just the shipped defaults.
+function Core.serialize_config(config)
+    return "return {\n    icons = "
+        .. serialize_string_map(config.icons)
+        .. ",\n    labels = "
+        .. serialize_string_map(config.labels)
+        .. ",\n}\n"
 end
 
 return Core

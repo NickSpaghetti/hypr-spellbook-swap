@@ -40,18 +40,14 @@ local terminal = os.getenv("TERMINAL") or "kitty"
 hl.bind("SUPER + Q", hl.dsp.exec_cmd(terminal))
 hl.bind("SUPER + SHIFT + Q", hl.dsp.exit())
 
--- hl.layout.register segfaults `Hyprland --verify-config` on 0.55.x (verify
--- loads the config but has no layout subsystem to register into). It works in
--- a real run, so register the custom layouts only in the nested instance --
--- run-nested.sh sets SBS_E2E=1 -- and skip it under `make verify`.
-local register
-if os.getenv("SBS_E2E") == "1" then
-    register = dofile(repo .. "/src/custom_layouts.lua")
-end
+local sb = dofile(repo .. "/src/init.lua")
 
--- Wire the module with an isolated, throwaway state dir (test/.state).
-local sb = dofile(repo .. "/src/spellbook_swap.lua")
-sb.setup({
-    state_dir = repo .. "/test/.state",
-    register = register,
-})
+-- hl.layout.register crashes `Hyprland --verify-config` on 0.55.x, and setup
+-- registers the bundled custom layouts by default. So under `make verify`
+-- (SBS_E2E unset) disable registration with register = {}; the nested run
+-- (run-nested.sh sets SBS_E2E=1) uses the default and registers the grid layout.
+local opts = { state_dir = repo .. "/test/.state" }
+if os.getenv("SBS_E2E") ~= "1" then
+    opts.register = {}
+end
+sb.setup(opts)

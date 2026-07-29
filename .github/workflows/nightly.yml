@@ -7,12 +7,56 @@ jobs:
   verify-latest-hyprland:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
 
+      # Keep this invocation identical to the `verify-nix` target in the
+      # Makefile -- that target's comment promises it is the same check.
       - name: Build + verify latest Hyprland (via nixos/nix Docker image)
+        env:
+          # Nix's github: fetcher calls api.github.com for both ref resolution
+          # and tarball downloads, once per input -- flake.lock has ~17 of them.
+          # Unauthenticated that is capped at 60/hr per runner IP, shared with
+          # every other job on that IP, so nightlies fail intermittently with a
+          # 403. The repo's own token raises it to 1000/hr.
+          GH_TOKEN: ${{ github.token }}
         run: |
-          docker run --rm -v "$PWD":/workspace -w /workspace nixos/nix:latest sh -c '
+          docker run --rm -e GH_TOKEN -v "$PWD":/workspace -w /workspace nixos/nix:latest sh -c '
+            # Written to a file rather than passed as `nix --option
+            # access-tokens ...`, which would leak the token into the echoed
+            # step log and into ps output.
+            if [ -n "$GH_TOKEN" ]; then
+              mkdir -p /etc/nix
+              printf "access-tokens = github.com=%s\n" "$GH_TOKEN" >> /etc/nix/nix.conf
+            fi
+
+            # Workaround for hyprwm/Hyprland#15624 ("ipc: refactor socket1 and
+            # socket2"), which segfaults `Hyprland --verify-config`.
+            #
+            # postConfigReload() guards the socket2 event post with
+            # `if (IPC::Socket2::sock())`, but sock() is a function-local static
+            # that always constructs -- so the guard never fails, and evaluating
+            # it is what builds the socket. Under --verify-config the compositor
+            # returns early from its ctor, leaving m_instancePath empty and
+            # m_wlEventLoop null. CUnixImpl therefore binds to ""+"/.socket2.sock",
+            # succeeds because we are root, and then dereferences the null event
+            # loop in wl_event_loop_add_fd().
+            #
+            # Pre-creating that path makes bind() fail EADDRINUSE, which takes
+            # the ctor down an early-return it already has, before the null
+            # deref. Expect an ERR line about not being able to bind the
+            # Hyprland Socket 2 -- that is this working, not a new problem.
+            # Delete this line once upstream lands a fix.
+            : > /.socket2.sock
+
+            # When debugging a future crash here, note that Hyprland claims
+            # "Further logs will be written to /hyprland.log" but never creates
+            # that file under --verify-config: setOutputFile() is only reached
+            # via CLogger::initIS(), which the compositor ctor skips in verify
+            # mode. Stdout is all there is -- do not go looking for the log.
+
             git config --global --add safe.directory /workspace &&
             nix --extra-experimental-features "nix-command flakes" \
                 --option accept-flake-config true \

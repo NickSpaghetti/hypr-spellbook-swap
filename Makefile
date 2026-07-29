@@ -40,9 +40,36 @@ verify:
 # Build upstream's current default-branch Hyprland via its own flake
 # (bypassing flake.lock, which only pins a baseline) and run verify against
 # it, all inside the official nixos/nix Docker image. Local Nix install is not required
-# This is the same check the nightly CI job runs.
+# This is the same check the nightly CI job runs, so keep the container
+# invocation below in sync with .github/workflows/nightly.yml.
+#
+# GH_TOKEN is optional here (CI always sets it, from github.token): Nix's
+# github: fetcher calls api.github.com once per flake input, and 60/hr
+# unauthenticated is easy to exhaust. Export GH_TOKEN=$$(gh auth token) to get
+# the 1000/hr limit; leaving it unset just falls back to anonymous fetches.
+#
+# The `: > /.socket2.sock` line works around hyprwm/Hyprland#15624, which
+# segfaults `Hyprland --verify-config`: postConfigReload() guards its socket2
+# post with `if (IPC::Socket2::sock())`, but sock() is a function-local static
+# that always constructs, so the guard never fails and evaluating it builds the
+# socket. Under --verify-config the compositor ctor returns early, leaving
+# m_instancePath empty and m_wlEventLoop null, so CUnixImpl binds to
+# "/.socket2.sock" (succeeds, since we are root in the container) and then
+# dereferences the null event loop. Pre-creating the path makes bind() fail
+# EADDRINUSE, taking an early-return the ctor already has. Expect an ERR line
+# about failing to bind Socket 2 -- that is the workaround, not a regression.
+# Delete the line once upstream is fixed.
+#
+# Comments cannot live inside the sh -c below: make joins the backslash
+# continuations into one line, so a # would comment out everything after it.
+# (This is why the notes above are here rather than beside each command.)
 verify-nix:
-	docker run --rm -v "$(CURDIR)":/workspace -w /workspace nixos/nix:latest sh -c '\
+	docker run --rm -e GH_TOKEN -v "$(CURDIR)":/workspace -w /workspace nixos/nix:latest sh -c '\
+		if [ -n "$$GH_TOKEN" ]; then \
+			mkdir -p /etc/nix && \
+			printf "access-tokens = github.com=%s\n" "$$GH_TOKEN" >> /etc/nix/nix.conf; \
+		fi; \
+		: > /.socket2.sock; \
 		git config --global --add safe.directory /workspace && \
 		nix --extra-experimental-features "nix-command flakes" \
 		    --option accept-flake-config true \

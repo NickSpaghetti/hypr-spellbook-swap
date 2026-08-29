@@ -79,8 +79,18 @@ function Core.waybar_state(config, tiled_layout)
     }
 end
 
-function Core.notify_send_cmd(label, icon)
-    return string.format('notify-send -t 1500 -a hypr-spellbook-swap "Layout" "%s %s"', icon, label)
+function Core.notify_send_cmd(label, image_path)
+    -- Body is the label only. The PUA glyph belongs to Waybar; swaync does not
+    -- load the layout font, so putting it in the text is a tofu box. -i fills
+    -- the image slot. The path is quoted by the caller.
+    if image_path then
+        return string.format(
+            'notify-send -t 1500 -a hypr-spellbook-swap -i %s "Layout" "%s"',
+            image_path,
+            label
+        )
+    end
+    return string.format('notify-send -t 1500 -a hypr-spellbook-swap "Layout" "%s"', label)
 end
 
 -- Sticky state is tagged `id:<n>=<layout>` / `name:<name>=<layout>`.

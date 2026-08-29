@@ -165,4 +165,16 @@ local micon, mlabel = core.icon_and_label(mock, "mystery")
 ok.eq(micon, "?")
 ok.eq(mlabel, "mystery")
 
+-- notify-send body is the label only. The PUA glyph is a Waybar/font thing;
+-- swaync will not load hypr-spellbook-swap-layouts, so putting it next to the
+-- name is a tofu box. -i is the image; omitted when no file was installed.
+ok.eq(
+    core.notify_send_cmd("Dwindle"),
+    'notify-send -t 1500 -a hypr-spellbook-swap "Layout" "Dwindle"'
+)
+ok.eq(
+    core.notify_send_cmd("Dwindle", "'/tmp/dwindle.svg'"),
+    'notify-send -t 1500 -a hypr-spellbook-swap -i \'/tmp/dwindle.svg\' "Layout" "Dwindle"'
+)
+
 ok.done()

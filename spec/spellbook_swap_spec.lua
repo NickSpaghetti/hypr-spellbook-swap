@@ -128,6 +128,7 @@ local calls = fake_hl("scrolling")
 sb.setup({ hl = calls.hl, layouts = mock_layout_config, state_dir = shared_dir, notify = false })
 ok.eq(#calls.binds, 1)
 ok.eq(calls.binds[1].combo, "SUPER + L")
+ok.eq(sb.cycle, calls.binds[1].fn)
 ok.eq(#calls.events, 2)
 ok.eq(calls.registered.grid ~= nil, true)
 
@@ -151,7 +152,11 @@ sb.setup({
     notification_engine = "sway",
 })
 last(calls.binds).fn()
-ok.eq(contains(calls.exec, 'notify-send -t 1500 -a hypr-spellbook-swap "Layout" "D Dwindle"'), true)
+local icon_svg = os.getenv("HOME") .. "/.local/share/hypr-spellbook-swap/icons/dwindle.svg"
+local notify_cmd = "notify-send -t 1500 -a hypr-spellbook-swap -i '"
+    .. icon_svg
+    .. '\' "Layout" "Dwindle"'
+ok.eq(contains(calls.exec, notify_cmd), true)
 ok.eq(#calls.notifications, 0)
 
 -- 4) engine="hyprland" (default) calls hl.notification.create

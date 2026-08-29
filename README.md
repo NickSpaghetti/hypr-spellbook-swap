@@ -7,7 +7,7 @@ A self contained Lua config module for Hyprland 0.55+. No plugin and no compiled
 ## Features
 
 * One keybind cycles the layout on the focused workspace. The default is `SUPER + L` and it wraps through a list you configure.
-* A Waybar custom module shows a per layout glyph and a `Layout: <name>` tooltip. It refreshes on workspace and monitor changes with no polling.
+* A Waybar custom module shows a per layout glyph and a `Layout: <name>` tooltip. Click it to cycle. It refreshes on workspace and monitor changes with no polling.
 * An optional notification on each switch, either the native Hyprland overlay or `notify-send`.
 * Optional sticky state. Each workspace remembers its layout (by numeric id, or by name for named and special workspaces) and gets it back after `hyprctl reload`.
 * A pure, tested core. All of the layout logic lives in `src/core.lua` with unit tests, and the rest is thin glue.
@@ -32,10 +32,11 @@ make install
 `make install` copies a snapshot into place:
 
 * the module into `~/.config/hypr/hypr-spellbook-swap`, so Hyprland can `require` it by name.
-* the Waybar exec onto your PATH as `hypr-spellbook-swap-waybar`.
+* the Waybar exec onto your PATH as `hypr-spellbook-swap-waybar`, and `hypr-spellbook-swap-cycle` for the module click.
 * the icon font into `~/.local/share/fonts`, then refreshes the font cache. Without the font the glyphs show up as tofu boxes.
+* layout SVGs into `~/.local/share/hypr-spellbook-swap/icons`, used as the `notify-send -i` image when `notification_engine = "sway"`.
 
-Because it copies rather than symlinks, editing the repo does not change your live install until you re-run `make install`. That is deliberate, so a work in progress edit cannot break your running session. `make uninstall` removes all three.
+Because it copies rather than symlinks, editing the repo does not change your live install until you re-run `make install`. That is deliberate, so a work in progress edit cannot break your running session. `make uninstall` removes those copies and the sticky state dir.
 
 ### 2. Wire it into your hyprland.lua
 
@@ -63,7 +64,8 @@ This step is optional. Add `"custom/hypr-spellbook-swap"` to a modules list in `
     "return-type": "json",
     "signal": 8,
     "tooltip": true,
-    "format": "{}"
+    "format": "{}",
+    "on-click": "hypr-spellbook-swap-cycle"
 }
 ```
 
@@ -159,7 +161,7 @@ make verify     # validate test/hyprland.lua through real Hyprland with no compo
 make verify-nix # same check, but against upstream's current default branch, via Docker
 make e2e        # nested Hyprland using test/hyprland.lua, press SUPER+SHIFT+Q to quit
 make font       # rebuild font/dist/hypr-spellbook-swap-layouts.ttf from font/icons/*.svg, needs fontforge
-make install     # copy the module into ~/.config/hypr, the waybar exec onto PATH, and the font
+make install     # copy the module, waybar execs, font, and notify-send SVGs
 make uninstall   # remove the install and ~/.local/state/hypr-spellbook-swap
 make reset-state # delete sticky state only. install does not.
 ```
@@ -175,7 +177,7 @@ A note on `make verify-nix`. It builds Hyprland's own `flake.nix` at its current
 ```
 src/       init.lua, core.lua, spellbook_swap.lua, layouts.lua, custom_layouts.lua, waybar.lua, waybar_emit.lua
 spec/      unit tests for core, glue and waybar, plus a tiny zero dep harness
-scripts/   waybar-layout.sh, the Waybar exec
+scripts/   waybar-layout.sh (Waybar exec) and waybar-cycle.sh (on-click)
 waybar/    custom-hypr-spellbook-swap.jsonc module + style-snippet.css to paste into your Waybar config
 font/      icon SVGs, build.sh, and the prebuilt dist/hypr-spellbook-swap-layouts.ttf
 test/      isolated hyprland.lua and run-nested.sh for verify and e2e

@@ -40,12 +40,28 @@ local function merged(base, extra)
     return out
 end
 
-local function ensure_dir(path)
-    os.execute('mkdir -p "' .. path .. '"')
-end
-
 local REPO = script_dir()
 local core = dofile(REPO .. "/core.lua")
+
+local function quoted_path(path)
+    return "'" .. path .. "'"
+end
+
+local function ensure_dir(path)
+    if not core.path_is_safe(path) then
+        return false
+    end
+    local q = quoted_path(path)
+    os.execute("mkdir -p -- " .. q .. " && chmod 0700 -- " .. q)
+    return true
+end
+
+local function chmod_file(path, mode)
+    if not core.path_is_safe(path) then
+        return
+    end
+    os.execute("chmod " .. mode .. " -- " .. quoted_path(path))
+end
 
 function Swap.setup(opts)
     opts = opts or {}
@@ -84,12 +100,16 @@ function Swap.setup(opts)
     local engine = opts.notification_engine or config.notification_engine or "hyprland"
     local signal = opts.waybar_signal or config.waybar_signal or 8
     local modifier = opts.mod or config.mod or "SUPER"
-    local key = opts.key or config.key or "L"
+    local bind_key = opts.key or config.key or "L"
 
     local state_dir = opts.state_dir or (os.getenv("HOME") .. "/.local/state/hypr-spellbook-swap")
+    local state_ok = core.path_is_safe(state_dir)
+    if not state_ok then
+        warn("state_dir is unsafe (quote, NUL, or newline); persistence disabled")
+    end
     local state_file = state_dir .. "/layouts"
     local state_temp_file = state_file .. ".tmp"
-    local state = {} -- workspace id -> layout name
+    local state = {} -- tagged key ("id:2" / "name:coding") -> layout name
 
     -- Register custom Lua layouts. Defaults to the bundled providers so the
     -- default cycle's "lua:grid" works out of the box. Pass register = {} to
@@ -124,29 +144,88 @@ function Swap.setup(opts)
     -- Persist the effective icons/labels so the out-of-process Waybar emit
     -- (which cannot see these setup opts) renders what you configured, not just
     -- the shipped defaults.
-    ensure_dir(state_dir)
-    local waybar_file = io.open(state_dir .. "/waybar.lua", "w")
-    if waybar_file then
-        waybar_file:write(core.serialize_config(config))
-        waybar_file:close()
+    if state_ok then
+        ensure_dir(state_dir)
+        local waybar_path = state_dir .. "/waybar.lua"
+        local waybar_file = io.open(waybar_path, "w")
+        if waybar_file then
+            waybar_file:write(core.serialize_config(config))
+            waybar_file:close()
+            chmod_file(waybar_path, "0600")
+        end
     end
 
-    local function apply(workspace_id, layout)
-        hl.workspace_rule({ workspace = tostring(workspace_id), layout = layout })
+    -- Apply using a string we formatted from a live object or a parsed id, never
+    -- a raw file field. Numeric IDs only; special workspaces use the object's
+    -- config_name because negative IDs are relative selectors in Hyprland.
+    local function apply_to_object(workspace, layout)
+        if core.is_positive_workspace_id(workspace.id) then
+            hl.workspace_rule({ workspace = tostring(workspace.id), layout = layout })
+            return
+        end
+        if workspace.special then
+            local selector = workspace.config_name or workspace.name
+            if selector then
+                hl.workspace_rule({ workspace = selector, layout = layout })
+            end
+        end
+    end
+
+    local function apply_id(id, layout)
+        hl.workspace_rule({ workspace = tostring(id), layout = layout })
+    end
+
+    local function live_workspaces()
+        if hl.get_workspaces then
+            return hl.get_workspaces() or {}
+        end
+        return {}
+    end
+
+    local function name_match_count(name)
+        local count = 0
+        for _, workspace in ipairs(live_workspaces()) do
+            if workspace.name == name then
+                count = count + 1
+            end
+        end
+        return count
+    end
+
+    local function unique_named(name)
+        local found = nil
+        local count = 0
+        for _, workspace in ipairs(live_workspaces()) do
+            if workspace.name == name then
+                count = count + 1
+                found = workspace
+            end
+        end
+        if count > 1 then
+            warn("workspace name '" .. name .. "' matches more than one workspace; skipped")
+            return nil
+        end
+        return found
     end
 
     local function persist()
+        if not state_ok then
+            return
+        end
         ensure_dir(state_dir)
+        os.remove(state_temp_file)
         local file = io.open(state_temp_file, "w")
         if file then
             file:write(core.serialize_state(state))
             file:close()
+            chmod_file(state_temp_file, "0600")
             os.rename(state_temp_file, state_file)
+            chmod_file(state_file, "0600")
         end
     end
 
-    local function save_layout(workspace_id, layout)
-        state[workspace_id] = layout
+    local function save_layout(workspace, layout)
+        core.put_saved(state, workspace, layout)
         persist()
     end
 
@@ -164,12 +243,28 @@ function Swap.setup(opts)
         hl.exec_cmd("pkill -RTMIN+" .. signal .. " waybar")
     end
 
-    local function restore_active()
-        local workspace = hl.get_active_workspace()
-        local saved = workspace and state[workspace.id]
-        if saved and not core.match_key({ saved }, workspace.tiled_layout) then
-            apply(workspace.id, saved)
+    local function restore_workspace(workspace)
+        if not workspace then
+            return
         end
+        local saved = core.saved_layout(state, workspace)
+        if not saved then
+            return
+        end
+        local name = workspace.name
+        if type(name) == "string" and state[core.name_key(name)] == saved then
+            if hl.get_workspaces and name_match_count(name) > 1 then
+                warn("workspace name '" .. name .. "' matches more than one workspace; skipped")
+                return
+            end
+        end
+        if not core.match_key({ saved }, workspace.tiled_layout) then
+            apply_to_object(workspace, saved)
+        end
+    end
+
+    local function restore_active(workspace)
+        restore_workspace(workspace or hl.get_active_workspace())
         signal_waybar()
     end
 
@@ -185,20 +280,21 @@ function Swap.setup(opts)
     -- Runtime backstop: layout changes apply asynchronously, so after a short
     -- delay read back the actual layout. If it differs from what we asked for,
     -- Hyprland fell back (the name was not really available) -- warn.
-    local function verify_applied(workspace_id, requested)
+    local function verify_applied(target, requested)
         if not hl.timer then
-            save_layout(workspace_id, requested)
+            save_layout(target, requested)
             return
         end
+        local want = core.persist_key(target)
         local timer
         timer = hl.timer(function()
             if timer and timer.set_enabled then
                 timer:set_enabled(false)
             end
             local workspace = hl.get_active_workspace()
-            if workspace and workspace.id == workspace_id then
+            if workspace and core.persist_key(workspace) == want then
                 if core.match_key({ requested }, workspace.tiled_layout) then
-                    save_layout(workspace_id, requested)
+                    save_layout(workspace, requested)
                 else
                     warn(
                         "layout '"
@@ -215,51 +311,63 @@ function Swap.setup(opts)
     local function cycle()
         local workspace = hl.get_active_workspace()
         local next_layout = core.next_layout(config, workspace.tiled_layout)
-        apply(workspace.id, next_layout)
+        apply_to_object(workspace, next_layout)
         if notify then
             announce(next_layout)
         end
         signal_waybar()
-        verify_applied(workspace.id, next_layout)
+        verify_applied(workspace, next_layout)
     end
 
     -- Runtime layout changes are dropped on reload, so re-apply saved layouts on
-    -- setup when sticky is enabled.
+    -- setup when sticky is enabled. Named entries with no live object stay pending.
     if sticky then
-        ensure_dir(state_dir)
-        local loaded, valid = read_state(state_file)
-        if not valid then
-            local recovered, recovered_valid = read_state(state_temp_file)
-            if recovered_valid then
-                state = recovered
-                os.rename(state_temp_file, state_file)
+        if state_ok then
+            ensure_dir(state_dir)
+            local loaded, valid = read_state(state_file)
+            if not valid then
+                local recovered, recovered_valid = read_state(state_temp_file)
+                if recovered_valid then
+                    state = recovered
+                    os.rename(state_temp_file, state_file)
+                    chmod_file(state_file, "0600")
+                end
+            elseif loaded then
+                state = loaded
             end
-        elseif loaded then
-            state = loaded
         end
         local filtered, invalid_workspaces = core.filter_state(state, config.cycle)
         state = filtered
-        for _, workspace_id in ipairs(invalid_workspaces) do
-            warn(
-                "saved layout for workspace " .. workspace_id .. " is no longer configured; removed"
-            )
+        for _, key in ipairs(invalid_workspaces) do
+            warn("saved layout for workspace " .. key .. " is no longer configured; removed")
         end
         if #invalid_workspaces > 0 then
             persist()
         end
-        if next(state) ~= nil then
-            for workspace_id, layout in pairs(state) do
-                apply(workspace_id, layout)
+        for key, layout in pairs(state) do
+            local kind, identity = core.state_kind(key)
+            if kind == "id" then
+                apply_id(tonumber(identity), layout)
+            elseif kind == "name" then
+                local workspace = unique_named(identity)
+                if workspace then
+                    apply_to_object(workspace, layout)
+                end
             end
         end
     end
 
-    hl.bind(modifier .. " + " .. key, cycle)
+    hl.bind(modifier .. " + " .. bind_key, cycle)
     if sticky then
         -- Re-apply after Hyprland creates or activates a window, since the
         -- default layout can replace the startup rule during app launch.
+        -- workspace.created applies pending named entries once the object exists.
+        hl.on("workspace.created", restore_workspace)
         hl.on("workspace.active", restore_active)
-        hl.on("window.open", restore_active)
+        hl.on("window.open", function()
+            restore_workspace(hl.get_active_workspace())
+            signal_waybar()
+        end)
     else
         hl.on("workspace.active", signal_waybar)
     end

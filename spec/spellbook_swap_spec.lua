@@ -11,7 +11,18 @@ local mock_layout_config = {
 
 -- Fresh fake `hl` that records everything the glue asks Hyprland to do. The
 -- fake is passed to setup via opts.hl, so no global is touched.
-local function fake_hl(tiled_layout, applies_rules)
+local function fake_hl(tiled_layout, applies_rules, extra)
+    extra = extra or {}
+    local ws = extra.workspace
+        or {
+            id = extra.id or 2,
+            name = extra.name or "2",
+            special = extra.special or false,
+            config_name = extra.config_name,
+            tiled_layout = tiled_layout,
+        }
+    ws.tiled_layout = tiled_layout
+    local extras = extra.workspaces or {}
     local calls = {
         exec = {},
         rules = {},
@@ -20,10 +31,18 @@ local function fake_hl(tiled_layout, applies_rules)
         events = {},
         registered = {},
         timers = {},
+        workspace = ws,
     }
     calls.hl = {
         get_active_workspace = function()
-            return { id = 2, tiled_layout = tiled_layout }
+            return ws
+        end,
+        get_workspaces = function()
+            local list = { ws }
+            for i = 1, #extras do
+                list[#list + 1] = extras[i]
+            end
+            return list
         end,
         exec_cmd = function(cmd)
             calls.exec[#calls.exec + 1] = cmd
@@ -31,7 +50,7 @@ local function fake_hl(tiled_layout, applies_rules)
         workspace_rule = function(rule)
             calls.rules[#calls.rules + 1] = rule
             if applies_rules then
-                tiled_layout = rule.layout
+                ws.tiled_layout = rule.layout
             end
         end,
         notification = {
@@ -55,6 +74,9 @@ local function fake_hl(tiled_layout, applies_rules)
             return { set_enabled = function() end }
         end,
     }
+    if extra.no_get_workspaces then
+        calls.hl.get_workspaces = nil
+    end
     return calls
 end
 
@@ -69,6 +91,23 @@ local function contains(list, needle)
         end
     end
     return false
+end
+
+local function event_fn(calls, name)
+    for _, item in ipairs(calls.events) do
+        if item.event == name then
+            return item.fn
+        end
+    end
+    return nil
+end
+
+local function rule_workspaces(calls)
+    local out = {}
+    for i = 1, #calls.rules do
+        out[i] = calls.rules[i].workspace
+    end
+    return out
 end
 
 local function fresh_state_dir()
@@ -200,6 +239,9 @@ sb.setup({
 })
 last(first.binds).fn() -- ws 2 -> dwindle; persistence waits for read-back
 last(first.timers)()
+local sticky_saved = io.open(sticky_dir .. "/layouts", "r")
+ok.eq(sticky_saved:read("*a"), "id:2=dwindle\n")
+sticky_saved:close()
 local second = fake_hl("scrolling", true)
 sb.setup({
     hl = second.hl,
@@ -210,7 +252,7 @@ sb.setup({
 })
 ok.eq(second.rules[1].workspace, "2")
 ok.eq(second.rules[1].layout, "dwindle")
-second.events[1].fn()
+event_fn(second, "workspace.active")()
 ok.eq(#second.rules, 1)
 
 -- 11) setup persists the effective (merged) icons/labels for the waybar emit
@@ -232,7 +274,7 @@ os.execute('rm -rf "' .. pdir .. '"')
 local recovery_dir = fresh_state_dir()
 os.execute('mkdir -p "' .. recovery_dir .. '"')
 local recovery_file = io.open(recovery_dir .. "/layouts.tmp", "w")
-recovery_file:write("2=dwindle\n")
+recovery_file:write("id:2=dwindle\n")
 recovery_file:close()
 local recovered = fake_hl("scrolling")
 sb.setup({
@@ -245,7 +287,7 @@ sb.setup({
 ok.eq(recovered.rules[1].workspace, "2")
 ok.eq(recovered.rules[1].layout, "dwindle")
 local promoted = io.open(recovery_dir .. "/layouts", "r")
-ok.eq(promoted:read("*a"), "2=dwindle\n")
+ok.eq(promoted:read("*a"), "id:2=dwindle\n")
 promoted:close()
 os.execute('rm -rf "' .. recovery_dir .. '"')
 
@@ -253,7 +295,7 @@ os.execute('rm -rf "' .. recovery_dir .. '"')
 local invalid_state_dir = fresh_state_dir()
 os.execute('mkdir -p "' .. invalid_state_dir .. '"')
 local invalid_state_file = io.open(invalid_state_dir .. "/layouts", "w")
-invalid_state_file:write("2=removed\n")
+invalid_state_file:write("id:2=removed\n")
 invalid_state_file:close()
 local invalid_state = fake_hl("scrolling")
 sb.setup({
@@ -269,6 +311,88 @@ local cleaned = io.open(invalid_state_dir .. "/layouts", "r")
 ok.eq(cleaned:read("*a"), "")
 cleaned:close()
 os.execute('rm -rf "' .. invalid_state_dir .. '"')
+
+-- 14) named workspace in the file is pending until a live object exists; apply
+--     uses the resolved numeric id, never the file name
+local pending_dir = fresh_state_dir()
+os.execute('mkdir -p "' .. pending_dir .. '"')
+local pending_file = io.open(pending_dir .. "/layouts", "w")
+pending_file:write("name:coding=scrolling\n")
+pending_file:close()
+local pending = fake_hl("dwindle")
+sb.setup({
+    hl = pending.hl,
+    warn = noop,
+    layouts = mock_layout_config,
+    state_dir = pending_dir,
+    sticky = true,
+    notify = false,
+})
+ok.eq(#pending.rules, 0)
+event_fn(pending, "window.open")()
+ok.eq(#pending.rules, 0)
+event_fn(pending, "workspace.created")({
+    id = 7,
+    name = "coding",
+    tiled_layout = "dwindle",
+})
+ok.eq(#pending.rules, 1)
+ok.eq(pending.rules[1].workspace, "7")
+ok.eq(pending.rules[1].layout, "scrolling")
+ok.eq(contains(rule_workspaces(pending), "coding"), false)
+ok.eq(contains(rule_workspaces(pending), "name:coding"), false)
+os.execute('rm -rf "' .. pending_dir .. '"')
+
+-- 15) cycling a named live workspace persists name: and reapplies by id
+local named_dir = fresh_state_dir()
+local named = fake_hl("scrolling", true, { id = 5, name = "coding" })
+sb.setup({
+    hl = named.hl,
+    layouts = mock_layout_config,
+    state_dir = named_dir,
+    sticky = true,
+    notify = false,
+})
+last(named.binds).fn()
+last(named.timers)()
+local named_file = io.open(named_dir .. "/layouts", "r")
+ok.eq(named_file:read("*a"), "name:coding=dwindle\n")
+named_file:close()
+local named2 = fake_hl("scrolling", true, { id = 5, name = "coding" })
+sb.setup({
+    hl = named2.hl,
+    layouts = mock_layout_config,
+    state_dir = named_dir,
+    sticky = true,
+    notify = false,
+})
+ok.eq(named2.rules[1].workspace, "5")
+ok.eq(named2.rules[1].layout, "dwindle")
+os.execute('rm -rf "' .. named_dir .. '"')
+
+-- 16) special workspace applies via the object's config_name, not a negative id
+local special_dir = fresh_state_dir()
+local special = fake_hl("scrolling", true, {
+    id = -98,
+    name = "special:magic",
+    special = true,
+    config_name = "special:magic",
+})
+sb.setup({
+    hl = special.hl,
+    layouts = mock_layout_config,
+    state_dir = special_dir,
+    sticky = true,
+    notify = false,
+})
+last(special.binds).fn()
+ok.eq(last(special.rules).workspace, "special:magic")
+ok.eq(last(special.rules).layout, "dwindle")
+last(special.timers)()
+local special_file = io.open(special_dir .. "/layouts", "r")
+ok.eq(special_file:read("*a"), "name:special:magic=dwindle\n")
+special_file:close()
+os.execute('rm -rf "' .. special_dir .. '"')
 
 os.execute('rm -rf "' .. shared_dir .. '" "' .. sticky_dir .. '"')
 ok.done()

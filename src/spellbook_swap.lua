@@ -147,6 +147,15 @@ function Swap.setup(opts)
         hl.exec_cmd("pkill -RTMIN+" .. signal .. " waybar")
     end
 
+    local function restore_active()
+        local workspace = hl.get_active_workspace()
+        local saved = workspace and state[workspace.id]
+        if saved and not core.match_key({ saved }, workspace.tiled_layout) then
+            apply(workspace.id, saved)
+        end
+        signal_waybar()
+    end
+
     local function announce(layout)
         local icon, label = core.icon_and_label(config, layout)
         if engine == "sway" then
@@ -213,7 +222,14 @@ function Swap.setup(opts)
     end
 
     hl.bind(modifier .. " + " .. key, cycle)
-    hl.on("workspace.active", signal_waybar)
+    if sticky then
+        -- Re-apply after Hyprland creates or activates a window, since the
+        -- default layout can replace the startup rule during app launch.
+        hl.on("workspace.active", restore_active)
+        hl.on("window.open", restore_active)
+    else
+        hl.on("workspace.active", signal_waybar)
+    end
     hl.on("monitor.focused", signal_waybar)
 end
 

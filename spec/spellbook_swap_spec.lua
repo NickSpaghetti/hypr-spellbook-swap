@@ -206,6 +206,9 @@ sb.setup({
 })
 ok.eq(second.rules[1].workspace, "2")
 ok.eq(second.rules[1].layout, "dwindle")
+second.events[1].fn()
+ok.eq(second.rules[2].workspace, "2")
+ok.eq(second.rules[2].layout, "dwindle")
 
 -- 11) setup persists the effective (merged) icons/labels for the waybar emit
 local pdir = fresh_state_dir()

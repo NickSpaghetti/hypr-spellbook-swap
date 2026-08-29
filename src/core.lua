@@ -317,7 +317,12 @@ local function parse_state_line(line)
     if not left or not layout or layout == "" then
         return nil
     end
-    if has_char(layout, "=") or has_char(layout, "\n") or has_char(layout, "\r") or has_char(layout, "\0") then
+    if
+        has_char(layout, "=")
+        or has_char(layout, "\n")
+        or has_char(layout, "\r")
+        or has_char(layout, "\0")
+    then
         return nil
     end
     if left:sub(1, #ID_PREFIX) == ID_PREFIX then

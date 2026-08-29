@@ -90,7 +90,7 @@ Pass options to `sb.setup{...}` in your `hyprland.lua`. `sb.setup` is where your
 | `notify` | `false` | Show a notification on switch. |
 | `notification_engine` | `"hyprland"` | Use `"hyprland"` for the native overlay via `hl.notification`, or `"sway"` for `notify-send`. |
 | `sticky` | `false` | Persist each workspace layout and re-apply it on setup so it survives `hyprctl reload`. Named workspaces that do not exist yet stay pending until `workspace.created`. |
-| `state_dir` | `~/.local/state/hypr-spellbook-swap` | Where sticky state is written. Created mode 0700. |
+| `state_dir` | `~/.local/state/hypr-spellbook-swap` | Where sticky state is written. Created mode 0700. `make reset-state` and `make uninstall` remove this default path. A custom `state_dir` is not touched. |
 | `mod` | `"SUPER"` | Modifier for the cycle bind. |
 | `key` | `"L"` | Key for the cycle bind. |
 | `waybar_signal` | `8` | Real time signal used to refresh Waybar via `pkill -RTMIN+N waybar`. Match the module `"signal"`. |
@@ -159,8 +159,9 @@ make verify     # validate test/hyprland.lua through real Hyprland with no compo
 make verify-nix # same check, but against upstream's current default branch, via Docker
 make e2e        # nested Hyprland using test/hyprland.lua, press SUPER+SHIFT+Q to quit
 make font       # rebuild font/dist/hypr-spellbook-swap-layouts.ttf from font/icons/*.svg, needs fontforge
-make install    # copy the module into ~/.config/hypr, the waybar exec onto PATH, and the font
-make uninstall  # remove everything make install put in place
+make install     # copy the module into ~/.config/hypr, the waybar exec onto PATH, and the font
+make uninstall   # remove the install and ~/.local/state/hypr-spellbook-swap
+make reset-state # delete sticky state only. install does not.
 ```
 
 Dev tools install with `sudo pacman -S luacheck stylua`, plus `fontforge` only if you edit the SVGs. Tests and `make verify` run against the repo, not the install, so you develop against the repo and re-run `make install` when you want the live copy updated. The tests use a fake `hl` and a throwaway `state_dir` under `test/`, so nothing touches your live config or session.

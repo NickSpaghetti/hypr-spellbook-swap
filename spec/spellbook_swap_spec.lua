@@ -51,7 +51,6 @@ local function fake_hl(tiled_layout, applies_rules, extra)
             calls.rules[#calls.rules + 1] = rule
             if applies_rules then
                 ws.tiled_layout = rule.layout
-                tiled_layout = rule.layout
             end
         end,
         notification = {

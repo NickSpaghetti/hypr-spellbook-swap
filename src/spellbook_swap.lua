@@ -100,7 +100,7 @@ function Swap.setup(opts)
     local engine = opts.notification_engine or config.notification_engine or "hyprland"
     local signal = opts.waybar_signal or config.waybar_signal or 8
     local modifier = opts.mod or config.mod or "SUPER"
-    local key = opts.key or config.key or "L"
+    local bind_key = opts.key or config.key or "L"
 
     local state_dir = opts.state_dir or (os.getenv("HOME") .. "/.local/state/hypr-spellbook-swap")
     local state_ok = core.path_is_safe(state_dir)
@@ -357,7 +357,7 @@ function Swap.setup(opts)
         end
     end
 
-    hl.bind(modifier .. " + " .. key, cycle)
+    hl.bind(modifier .. " + " .. bind_key, cycle)
     if sticky then
         -- Re-apply after Hyprland creates or activates a window, since the
         -- default layout can replace the startup rule during app launch.

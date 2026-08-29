@@ -9,7 +9,7 @@ A self contained Lua config module for Hyprland 0.55+. No plugin and no compiled
 * One keybind cycles the layout on the focused workspace. The default is `SUPER + L` and it wraps through a list you configure.
 * A Waybar custom module shows a per layout glyph and a `Layout: <name>` tooltip. It refreshes on workspace and monitor changes with no polling.
 * An optional notification on each switch, either the native Hyprland overlay or `notify-send`.
-* Optional sticky state. Each workspace remembers its layout and gets it back after `hyprctl reload`.
+* Optional sticky state. Each workspace remembers its layout (by numeric id, or by name for named and special workspaces) and gets it back after `hyprctl reload`.
 * A pure, tested core. All of the layout logic lives in `src/core.lua` with unit tests, and the rest is thin glue.
 
 ## Requirements
@@ -89,11 +89,11 @@ Pass options to `sb.setup{...}` in your `hyprland.lua`. `sb.setup` is where your
 | `labels` | names for the same layouts | Map of layout key to a human name used in the tooltip and notification. Merged onto the defaults. |
 | `notify` | `false` | Show a notification on switch. |
 | `notification_engine` | `"hyprland"` | Use `"hyprland"` for the native overlay via `hl.notification`, or `"sway"` for `notify-send`. |
-| `sticky` | `false` | Persist each workspace layout and re-apply it on setup so it survives `hyprctl reload`. |
+| `sticky` | `false` | Persist each workspace layout and re-apply it on setup so it survives `hyprctl reload`. Named workspaces that do not exist yet stay pending until `workspace.created`. |
+| `state_dir` | `~/.local/state/hypr-spellbook-swap` | Where sticky state is written. Created mode 0700. |
 | `mod` | `"SUPER"` | Modifier for the cycle bind. |
 | `key` | `"L"` | Key for the cycle bind. |
 | `waybar_signal` | `8` | Real time signal used to refresh Waybar via `pkill -RTMIN+N waybar`. Match the module `"signal"`. |
-| `state_dir` | `~/.local/state/hypr-spellbook-swap` | Where sticky state is written. |
 | `register` | the bundled `grid` provider | Custom Lua layout providers in the form `{ name = { recalculate = fn } }`. Defaults to the bundled providers so `lua:grid` works. Pass `{}` to register none, or your own table to replace. |
 | `extra_layouts` | `{}` | Additional `lua:` layout names to accept as valid, for custom layouts registered outside this module. Built-in and plugin names need no declaration. |
 | `hl` | the injected global `hl` | The Hyprland API table. Defaults to the `hl` global Hyprland injects. Override only for testing or advanced use. |
@@ -104,6 +104,16 @@ The bundled font already carries glyphs for `master` (U+E901) and `monocle` (U+E
 Icons and labels you set apply to both the notification and the Waybar indicator: `sb.setup` writes the effective config to `~/.local/state/hypr-spellbook-swap/waybar.lua`, and the separate Waybar process reads it (it cannot see your `sb.setup` opts directly). `layouts.lua` is only the shipped defaults.
 
 Layout names are validated where the module can be authoritative. At load it drops any `lua:` layout in your `cycle` or `default` that is not registered (via `register` or declared in `extra_layouts`) and warns. Built-in and plugin names pass through, because Hyprland owns that namespace and gives no way to list it. As a runtime backstop it reads the layout back after each switch and warns if it did not actually take (Hyprland silently applies an unknown name as `dwindle`).
+
+Sticky state (when `sticky = true`) is a tagged text file at `$state_dir/layouts`:
+
+```
+id:2=dwindle
+name:coding=scrolling
+name:browser=lua:grid
+```
+
+Identity and layout fields are percent-encoded for reserved bytes (`%`, `=`, newline), then allowlisted after decode. The file is never executed. Names are compared with `==` against live workspace objects from `hl.get_workspaces()` and `workspace.created`. Layouts are applied with the resolved numeric workspace id, not a selector from the file. Special workspaces use the live object's `config_name`, because a negative id is a relative selector in Hyprland. Malformed names, selector-like strings, and untagged `2=dwindle` lines are rejected.
 
 ### Adding a layout to the rotation
 
@@ -126,10 +136,11 @@ For a layout the font does not cover, also pass an `icons` and `labels` entry (t
 
 Known good on Hyprland 0.55.4 and 0.56.0. This module rides on Hyprland's Lua `hl` API, which is new as of 0.55 and still changing between releases. An upgrade can rename or change a call it depends on, and if that happens `SUPER + L`, the Waybar indicator, or notifications can stop working. The `hl` surface it uses:
 
-* `hl.bind` and `hl.on`, for the keybind and the "workspace.active" / "monitor.focused" refresh events
+* `hl.bind` and `hl.on`, for the keybind and the `workspace.created` / `workspace.active` / `window.open` / `monitor.focused` events
 * `hl.layout.register(name, provider)`, for custom layouts
-* `hl.get_active_workspace()` and its `.id` and `.tiled_layout` fields
-* `hl.workspace_rule({ workspace = "<id>", layout = "<name>" })`, to switch a workspace's layout at runtime
+* `hl.get_active_workspace()` and its `.id`, `.name`, `.special`, `.config_name`, and `.tiled_layout` fields
+* `hl.get_workspaces()`, to resolve named sticky entries by exact name against live objects
+* `hl.workspace_rule({ workspace = "<id>", layout = "<name>" })`, to switch a workspace's layout at runtime (numeric id, or the object's `config_name` for special workspaces)
 * `hl.exec_cmd` and `hl.notification.create`
 
 After upgrading Hyprland, re-verify. The unit tests run against a fake `hl`, so they cannot catch an API change. Do a real check:

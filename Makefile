@@ -6,7 +6,9 @@ SPECS    := $(wildcard spec/*_spec.lua)
 HYPR_DIR    := $(if $(XDG_CONFIG_HOME),$(XDG_CONFIG_HOME),$(HOME)/.config)/hypr
 MODULE_DEST := $(HYPR_DIR)/hypr-spellbook-swap
 WAYBAR_BIN  := $(HOME)/.local/bin/hypr-spellbook-swap-waybar
+CYCLE_BIN   := $(HOME)/.local/bin/hypr-spellbook-swap-cycle
 FONT_DEST   := $(HOME)/.local/share/fonts/hypr-spellbook-swap-layouts.ttf
+ICON_DEST   := $(HOME)/.local/share/hypr-spellbook-swap/icons
 STATE_DIR   := $(HOME)/.local/state/hypr-spellbook-swap
 
 .DEFAULT_GOAL := help
@@ -99,8 +101,10 @@ hooks: ## Configure this repository to use .githooks
 remove-installed-files:
 	@test -n "$(HOME)" || { echo "remove-installed-files: HOME is not set"; exit 1; }
 	@case "$(MODULE_DEST)" in */hypr-spellbook-swap) : ;; *) echo "remove-installed-files: refusing unexpected path $(MODULE_DEST)"; exit 1 ;; esac
+	@case "$(ICON_DEST)" in */hypr-spellbook-swap/icons) : ;; *) echo "remove-installed-files: refusing unexpected path $(ICON_DEST)"; exit 1 ;; esac
 	rm -rf "$(MODULE_DEST)"
-	rm -f "$(WAYBAR_BIN)" "$(FONT_DEST)"
+	rm -f "$(WAYBAR_BIN)" "$(CYCLE_BIN)" "$(FONT_DEST)"
+	rm -rf "$(ICON_DEST)"
 	fc-cache -f
 
 reset-state: ## Delete sticky state under ~/.local/state/hypr-spellbook-swap
@@ -109,15 +113,22 @@ reset-state: ## Delete sticky state under ~/.local/state/hypr-spellbook-swap
 	rm -rf "$(STATE_DIR)"
 	@echo "removed sticky state $(STATE_DIR)"
 
-install: ## Install the module, Waybar exec, and font
+install: ## Install the module, Waybar execs, font, and notify icons
 	@test -n "$(HOME)" || { echo "install: HOME is not set"; exit 1; }
 	@test -d src || { echo "install: run from the repo root (missing src/)"; exit 1; }
 	@test -f font/dist/hypr-spellbook-swap-layouts.ttf || { echo "install: font missing; run 'make font' first"; exit 1; }
-	mkdir -p "$(MODULE_DEST)" "$(HOME)/.local/bin" "$(HOME)/.local/share/fonts"
+	mkdir -p "$(MODULE_DEST)" "$(HOME)/.local/bin" "$(HOME)/.local/share/fonts" "$(ICON_DEST)"
 	cp src/*.lua "$(MODULE_DEST)/"
 	cp scripts/waybar-layout.sh "$(WAYBAR_BIN)"
-	chmod +x "$(WAYBAR_BIN)"
+	cp scripts/waybar-cycle.sh "$(CYCLE_BIN)"
+	chmod +x "$(WAYBAR_BIN)" "$(CYCLE_BIN)"
 	cp font/dist/hypr-spellbook-swap-layouts.ttf "$(FONT_DEST)"
+	# White stroke: these are pixmaps in swaync, not glyphs, so CSS color does not apply.
+	sed 's/#000/#ffffff/g' font/icons/e900-dwindle.svg > "$(ICON_DEST)/dwindle.svg"
+	sed 's/#000/#ffffff/g' font/icons/e901-master.svg > "$(ICON_DEST)/master.svg"
+	sed 's/#000/#ffffff/g' font/icons/e902-scrolling.svg > "$(ICON_DEST)/scrolling.svg"
+	sed 's/#000/#ffffff/g' font/icons/e903-monocle.svg > "$(ICON_DEST)/monocle.svg"
+	sed 's/#000/#ffffff/g' font/icons/e904-custom.svg > "$(ICON_DEST)/lua-grid.svg"
 	fc-cache -f
 	@echo "installed hypr-spellbook-swap (copied to $(MODULE_DEST))"
 

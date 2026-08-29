@@ -43,6 +43,16 @@ end
 local REPO = script_dir()
 local core = dofile(REPO .. "/core.lua")
 
+-- Filenames `make install` copies under ~/.local/share/hypr-spellbook-swap/icons.
+-- Keys are icon_key values (lua:grid, not the runtime bare name).
+local notify_icon_file = {
+    scrolling = "scrolling.svg",
+    dwindle = "dwindle.svg",
+    master = "master.svg",
+    monocle = "monocle.svg",
+    ["lua:grid"] = "lua-grid.svg",
+}
+
 local function quoted_path(path)
     return "'" .. path .. "'"
 end
@@ -269,9 +279,18 @@ function Swap.setup(opts)
     end
 
     local function announce(layout)
-        local icon, label = core.icon_and_label(config, layout)
+        local _, label = core.icon_and_label(config, layout)
         if engine == "sway" then
-            hl.exec_cmd(core.notify_send_cmd(label, icon))
+            local file = notify_icon_file[core.icon_key(config, layout)]
+            local image
+            local home = os.getenv("HOME")
+            if file and home then
+                local path = home .. "/.local/share/hypr-spellbook-swap/icons/" .. file
+                if core.path_is_safe(path) then
+                    image = quoted_path(path)
+                end
+            end
+            hl.exec_cmd(core.notify_send_cmd(label, image))
         else
             hl.notification.create({ text = label, icon = "ok", timeout = 1500 })
         end
@@ -318,6 +337,10 @@ function Swap.setup(opts)
         signal_waybar()
         verify_applied(workspace, next_layout)
     end
+
+    -- Same closure as the keybind. Waybar on-click reaches it with
+    -- `hyprctl eval 'require("hypr-spellbook-swap").cycle()'`.
+    Swap.cycle = cycle
 
     -- Runtime layout changes are dropped on reload, so re-apply saved layouts on
     -- setup when sticky is enabled. Named entries with no live object stay pending.

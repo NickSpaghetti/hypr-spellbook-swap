@@ -232,7 +232,7 @@ os.execute('rm -rf "' .. pdir .. '"')
 local recovery_dir = fresh_state_dir()
 os.execute('mkdir -p "' .. recovery_dir .. '"')
 local recovery_file = io.open(recovery_dir .. "/layouts.tmp", "w")
-recovery_file:write("2=master\n")
+recovery_file:write("2=dwindle\n")
 recovery_file:close()
 local recovered = fake_hl("scrolling")
 sb.setup({
@@ -243,11 +243,32 @@ sb.setup({
     notify = false,
 })
 ok.eq(recovered.rules[1].workspace, "2")
-ok.eq(recovered.rules[1].layout, "master")
+ok.eq(recovered.rules[1].layout, "dwindle")
 local promoted = io.open(recovery_dir .. "/layouts", "r")
-ok.eq(promoted:read("*a"), "2=master\n")
+ok.eq(promoted:read("*a"), "2=dwindle\n")
 promoted:close()
 os.execute('rm -rf "' .. recovery_dir .. '"')
+
+-- 13) saved layouts removed from the cycle are dropped and the file is cleaned
+local invalid_state_dir = fresh_state_dir()
+os.execute('mkdir -p "' .. invalid_state_dir .. '"')
+local invalid_state_file = io.open(invalid_state_dir .. "/layouts", "w")
+invalid_state_file:write("2=removed\n")
+invalid_state_file:close()
+local invalid_state = fake_hl("scrolling")
+sb.setup({
+    hl = invalid_state.hl,
+    warn = noop,
+    layouts = mock_layout_config,
+    state_dir = invalid_state_dir,
+    sticky = true,
+    notify = false,
+})
+ok.eq(#invalid_state.rules, 0)
+local cleaned = io.open(invalid_state_dir .. "/layouts", "r")
+ok.eq(cleaned:read("*a"), "")
+cleaned:close()
+os.execute('rm -rf "' .. invalid_state_dir .. '"')
 
 os.execute('rm -rf "' .. shared_dir .. '" "' .. sticky_dir .. '"')
 ok.done()

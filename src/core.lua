@@ -126,6 +126,21 @@ function Core.parse_state(text)
     return state, valid
 end
 
+-- Keep saved layouts that still belong to the configured cycle. Removed or
+-- renamed layouts are discarded so Hyprland can use its configured default.
+function Core.filter_state(state, cycle)
+    local filtered = {}
+    local dropped = {}
+    for workspace_id, layout in pairs(state) do
+        if Core.match_key(cycle, layout) then
+            filtered[workspace_id] = layout
+        else
+            dropped[#dropped + 1] = workspace_id
+        end
+    end
+    return filtered, dropped
+end
+
 -- Does a layout name refer to a custom Lua layout ("lua:<name>")?
 function Core.is_lua_layout(name)
     return name:sub(1, #LUA_PREFIX) == LUA_PREFIX

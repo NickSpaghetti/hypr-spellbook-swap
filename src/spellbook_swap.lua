@@ -196,10 +196,7 @@ function Swap.setup(opts)
                 timer:set_enabled(false)
             end
             local workspace = hl.get_active_workspace()
-            if
-                workspace
-                and workspace.id == workspace_id
-            then
+            if workspace and workspace.id == workspace_id then
                 if core.match_key({ requested }, workspace.tiled_layout) then
                     save_layout(workspace_id, requested)
                 else
@@ -239,6 +236,14 @@ function Swap.setup(opts)
             end
         elseif loaded then
             state = loaded
+        end
+        local filtered, dropped = core.filter_state(state, config.cycle)
+        state = filtered
+        for _, workspace_id in ipairs(dropped) do
+            warn("saved layout for workspace " .. workspace_id .. " is no longer configured; removed")
+        end
+        if #dropped > 0 then
+            persist()
         end
         if next(state) ~= nil then
             for workspace_id, layout in pairs(state) do

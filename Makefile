@@ -93,7 +93,9 @@ hooks: ## Configure this repository to use .githooks
 
 # Copy (not symlink) the module into the Hyprland config dir so the live install
 # is a stable snapshot: editing the repo does not change it until you re-run
-# `make install`. install replaces the copied files and leaves sticky state.
+# `make install`. install overwrites the copied files in place so Hyprland's
+# config watcher never sees a missing `require("hypr-spellbook-swap")`. Sticky
+# state is left alone.
 remove-installed-files:
 	@test -n "$(HOME)" || { echo "remove-installed-files: HOME is not set"; exit 1; }
 	@case "$(MODULE_DEST)" in */hypr-spellbook-swap) : ;; *) echo "remove-installed-files: refusing unexpected path $(MODULE_DEST)"; exit 1 ;; esac
@@ -111,7 +113,6 @@ install: ## Install the module, Waybar exec, and font
 	@test -n "$(HOME)" || { echo "install: HOME is not set"; exit 1; }
 	@test -d src || { echo "install: run from the repo root (missing src/)"; exit 1; }
 	@test -f font/dist/hypr-spellbook-swap-layouts.ttf || { echo "install: font missing; run 'make font' first"; exit 1; }
-	$(MAKE) remove-installed-files
 	mkdir -p "$(MODULE_DEST)" "$(HOME)/.local/bin" "$(HOME)/.local/share/fonts"
 	cp src/*.lua "$(MODULE_DEST)/"
 	cp scripts/waybar-layout.sh "$(WAYBAR_BIN)"

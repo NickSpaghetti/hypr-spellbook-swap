@@ -237,14 +237,14 @@ function Swap.setup(opts)
         elseif loaded then
             state = loaded
         end
-        local filtered, dropped = core.filter_state(state, config.cycle)
+        local filtered, invalid_workspaces = core.filter_state(state, config.cycle)
         state = filtered
-        for _, workspace_id in ipairs(dropped) do
+        for _, workspace_id in ipairs(invalid_workspaces) do
             warn(
                 "saved layout for workspace " .. workspace_id .. " is no longer configured; removed"
             )
         end
-        if #dropped > 0 then
+        if #invalid_workspaces > 0 then
             persist()
         end
         if next(state) ~= nil then

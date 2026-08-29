@@ -30,7 +30,16 @@ local unknown = core.waybar_state(mock_layout_config, "unknown")
 ok.eq(unknown.text, "?")
 ok.eq(unknown.tooltip, "Layout: unknown")
 
-ok.eq(core.parse_state(core.serialize_state({ [2] = "dwindle" }))[2], "dwindle")
+local parsed, valid = core.parse_state(core.serialize_state({ [2] = "dwindle" }))
+ok.eq(parsed[2], "dwindle")
+ok.eq(valid, true)
+local _, invalid = core.parse_state("not-state\n")
+ok.eq(invalid, false)
+local filtered, state_dropped =
+    core.filter_state({ [2] = "dwindle", [3] = "removed" }, mock_layout_config.cycle)
+ok.eq(filtered[2], "dwindle")
+ok.eq(filtered[3], nil)
+ok.eq(state_dropped[1], 3)
 -- is_lua_layout: only "lua:" names are custom
 ok.eq(core.is_lua_layout("lua:grid"), true)
 ok.eq(core.is_lua_layout("dwindle"), false)

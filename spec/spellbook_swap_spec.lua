@@ -11,7 +11,7 @@ local mock_layout_config = {
 
 -- Fresh fake `hl` that records everything the glue asks Hyprland to do. The
 -- fake is passed to setup via opts.hl, so no global is touched.
-local function fake_hl(tiled_layout)
+local function fake_hl(tiled_layout, applies_rules)
     local calls = {
         exec = {},
         rules = {},
@@ -30,6 +30,9 @@ local function fake_hl(tiled_layout)
         end,
         workspace_rule = function(rule)
             calls.rules[#calls.rules + 1] = rule
+            if applies_rules then
+                tiled_layout = rule.layout
+            end
         end,
         notification = {
             create = function(spec)
@@ -187,7 +190,7 @@ ok.eq(#bwarn, 1)
 
 -- 10) sticky: cycle persists state, and a fresh setup re-applies it
 local sticky_dir = fresh_state_dir()
-local first = fake_hl("scrolling")
+local first = fake_hl("scrolling", true)
 sb.setup({
     hl = first.hl,
     layouts = mock_layout_config,
@@ -195,8 +198,9 @@ sb.setup({
     sticky = true,
     notify = false,
 })
-last(first.binds).fn() -- ws 2 -> dwindle, persisted to sticky_dir
-local second = fake_hl("scrolling")
+last(first.binds).fn() -- ws 2 -> dwindle; persistence waits for read-back
+last(first.timers)()
+local second = fake_hl("scrolling", true)
 sb.setup({
     hl = second.hl,
     layouts = mock_layout_config,
@@ -206,6 +210,8 @@ sb.setup({
 })
 ok.eq(second.rules[1].workspace, "2")
 ok.eq(second.rules[1].layout, "dwindle")
+second.events[1].fn()
+ok.eq(#second.rules, 1)
 
 -- 11) setup persists the effective (merged) icons/labels for the waybar emit
 local pdir = fresh_state_dir()
@@ -221,6 +227,48 @@ local persisted = (loadstring or load)(io.open(pdir .. "/waybar.lua"):read("*a")
 ok.eq(persisted.icons["lua:my-foo"], "F")
 ok.eq(persisted.icons.scrolling, "S")
 os.execute('rm -rf "' .. pdir .. '"')
+
+-- 12) an interrupted atomic write can be recovered from a valid temp file
+local recovery_dir = fresh_state_dir()
+os.execute('mkdir -p "' .. recovery_dir .. '"')
+local recovery_file = io.open(recovery_dir .. "/layouts.tmp", "w")
+recovery_file:write("2=dwindle\n")
+recovery_file:close()
+local recovered = fake_hl("scrolling")
+sb.setup({
+    hl = recovered.hl,
+    layouts = mock_layout_config,
+    state_dir = recovery_dir,
+    sticky = true,
+    notify = false,
+})
+ok.eq(recovered.rules[1].workspace, "2")
+ok.eq(recovered.rules[1].layout, "dwindle")
+local promoted = io.open(recovery_dir .. "/layouts", "r")
+ok.eq(promoted:read("*a"), "2=dwindle\n")
+promoted:close()
+os.execute('rm -rf "' .. recovery_dir .. '"')
+
+-- 13) saved layouts removed from the cycle are dropped and the file is cleaned
+local invalid_state_dir = fresh_state_dir()
+os.execute('mkdir -p "' .. invalid_state_dir .. '"')
+local invalid_state_file = io.open(invalid_state_dir .. "/layouts", "w")
+invalid_state_file:write("2=removed\n")
+invalid_state_file:close()
+local invalid_state = fake_hl("scrolling")
+sb.setup({
+    hl = invalid_state.hl,
+    warn = noop,
+    layouts = mock_layout_config,
+    state_dir = invalid_state_dir,
+    sticky = true,
+    notify = false,
+})
+ok.eq(#invalid_state.rules, 0)
+local cleaned = io.open(invalid_state_dir .. "/layouts", "r")
+ok.eq(cleaned:read("*a"), "")
+cleaned:close()
+os.execute('rm -rf "' .. invalid_state_dir .. '"')
 
 os.execute('rm -rf "' .. shared_dir .. '" "' .. sticky_dir .. '"')
 ok.done()

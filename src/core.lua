@@ -99,6 +99,7 @@ end
 -- plain string search (no pattern matching): split each line on the first "=".
 function Core.parse_state(text)
     local state = {}
+    local valid = true
     local pos = 1
     while pos <= #text do
         local newline = text:find("\n", pos, true)
@@ -106,16 +107,38 @@ function Core.parse_state(text)
         local line = text:sub(pos, line_end)
         pos = line_end + 2
 
-        local separator = line:find("=", 1, true)
-        if separator then
-            local workspace_id = tonumber(line:sub(1, separator - 1))
-            local layout = line:sub(separator + 1)
-            if workspace_id and layout ~= "" then
-                state[workspace_id] = layout
+        if line ~= "" then
+            local separator = line:find("=", 1, true)
+            if not separator then
+                valid = false
+            end
+            if separator then
+                local workspace_id = tonumber(line:sub(1, separator - 1))
+                local layout = line:sub(separator + 1)
+                if workspace_id and layout ~= "" then
+                    state[workspace_id] = layout
+                else
+                    valid = false
+                end
             end
         end
     end
-    return state
+    return state, valid
+end
+
+-- Keep saved layouts that still belong to the configured cycle. Removed or
+-- renamed layouts are discarded so Hyprland can use its configured default.
+function Core.filter_state(state, cycle)
+    local filtered = {}
+    local dropped = {}
+    for workspace_id, layout in pairs(state) do
+        if Core.match_key(cycle, layout) then
+            filtered[workspace_id] = layout
+        else
+            dropped[#dropped + 1] = workspace_id
+        end
+    end
+    return filtered, dropped
 end
 
 -- Does a layout name refer to a custom Lua layout ("lua:<name>")?

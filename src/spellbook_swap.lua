@@ -240,7 +240,9 @@ function Swap.setup(opts)
         local filtered, dropped = core.filter_state(state, config.cycle)
         state = filtered
         for _, workspace_id in ipairs(dropped) do
-            warn("saved layout for workspace " .. workspace_id .. " is no longer configured; removed")
+            warn(
+                "saved layout for workspace " .. workspace_id .. " is no longer configured; removed"
+            )
         end
         if #dropped > 0 then
             persist()

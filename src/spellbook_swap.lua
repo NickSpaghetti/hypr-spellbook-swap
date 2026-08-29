@@ -88,6 +88,7 @@ function Swap.setup(opts)
 
     local state_dir = opts.state_dir or (os.getenv("HOME") .. "/.local/state/hypr-spellbook-swap")
     local state_file = state_dir .. "/layouts"
+    local state_temp_file = state_file .. ".tmp"
     local state = {} -- workspace id -> layout name
 
     -- Register custom Lua layouts. Defaults to the bundled providers so the
@@ -136,11 +137,27 @@ function Swap.setup(opts)
 
     local function persist()
         ensure_dir(state_dir)
-        local file = io.open(state_file, "w")
+        local file = io.open(state_temp_file, "w")
         if file then
             file:write(core.serialize_state(state))
             file:close()
+            os.rename(state_temp_file, state_file)
         end
+    end
+
+    local function save_layout(workspace_id, layout)
+        state[workspace_id] = layout
+        persist()
+    end
+
+    local function read_state(path)
+        local file = io.open(path, "r")
+        if not file then
+            return nil, false
+        end
+        local parsed, valid = core.parse_state(file:read("*a"))
+        file:close()
+        return parsed, valid
     end
 
     local function signal_waybar()
@@ -170,6 +187,7 @@ function Swap.setup(opts)
     -- Hyprland fell back (the name was not really available) -- warn.
     local function verify_applied(workspace_id, requested)
         if not hl.timer then
+            save_layout(workspace_id, requested)
             return
         end
         local timer
@@ -181,15 +199,18 @@ function Swap.setup(opts)
             if
                 workspace
                 and workspace.id == workspace_id
-                and workspace.tiled_layout ~= requested
             then
-                warn(
-                    "layout '"
-                        .. requested
-                        .. "' did not apply (now '"
-                        .. tostring(workspace.tiled_layout)
-                        .. "'); is it available?"
-                )
+                if core.match_key({ requested }, workspace.tiled_layout) then
+                    save_layout(workspace_id, requested)
+                else
+                    warn(
+                        "layout '"
+                            .. requested
+                            .. "' did not apply (now '"
+                            .. tostring(workspace.tiled_layout)
+                            .. "'); is it available?"
+                    )
+                end
             end
         end, { timeout = 100, type = "repeat" })
     end
@@ -198,8 +219,6 @@ function Swap.setup(opts)
         local workspace = hl.get_active_workspace()
         local next_layout = core.next_layout(config, workspace.tiled_layout)
         apply(workspace.id, next_layout)
-        state[workspace.id] = next_layout
-        persist()
         if notify then
             announce(next_layout)
         end
@@ -211,10 +230,17 @@ function Swap.setup(opts)
     -- setup when sticky is enabled.
     if sticky then
         ensure_dir(state_dir)
-        local file = io.open(state_file, "r")
-        if file then
-            state = core.parse_state(file:read("*a"))
-            file:close()
+        local loaded, valid = read_state(state_file)
+        if not valid then
+            local recovered, recovered_valid = read_state(state_temp_file)
+            if recovered_valid then
+                state = recovered
+                os.rename(state_temp_file, state_file)
+            end
+        elseif loaded then
+            state = loaded
+        end
+        if next(state) ~= nil then
             for workspace_id, layout in pairs(state) do
                 apply(workspace_id, layout)
             end

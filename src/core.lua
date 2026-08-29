@@ -99,6 +99,7 @@ end
 -- plain string search (no pattern matching): split each line on the first "=".
 function Core.parse_state(text)
     local state = {}
+    local valid = true
     local pos = 1
     while pos <= #text do
         local newline = text:find("\n", pos, true)
@@ -106,16 +107,23 @@ function Core.parse_state(text)
         local line = text:sub(pos, line_end)
         pos = line_end + 2
 
-        local separator = line:find("=", 1, true)
-        if separator then
-            local workspace_id = tonumber(line:sub(1, separator - 1))
-            local layout = line:sub(separator + 1)
-            if workspace_id and layout ~= "" then
-                state[workspace_id] = layout
+        if line ~= "" then
+            local separator = line:find("=", 1, true)
+            if not separator then
+                valid = false
+            end
+            if separator then
+                local workspace_id = tonumber(line:sub(1, separator - 1))
+                local layout = line:sub(separator + 1)
+                if workspace_id and layout ~= "" then
+                    state[workspace_id] = layout
+                else
+                    valid = false
+                end
             end
         end
     end
-    return state
+    return state, valid
 end
 
 -- Does a layout name refer to a custom Lua layout ("lua:<name>")?
